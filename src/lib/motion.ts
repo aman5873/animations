@@ -143,7 +143,7 @@ export interface CardConfig {
   bendSpinDeg: number;
 }
 
-const CARD_COUNT = 18;
+const CARD_COUNT = 24;
 
 // DURATION is derived from CARD_COUNT rather than fixed, so overlap density
 // (how many cards are ever mid-flight at once) stays constant as CARD_COUNT
@@ -247,9 +247,9 @@ export const SCENE_CONFIG = {
 } as const;
 
 const SIZE_TIERS = [
-  { weight: 0.28, min: 245, max: 300 },
-  { weight: 0.4, min: 195, max: 240 },
-  { weight: 0.32, min: 150, max: 190 },
+  { weight: 0.28, min: 270, max: 330 },
+  { weight: 0.4, min: 215, max: 260 },
+  { weight: 0.32, min: 165, max: 205 },
 ];
 
 function pickTier(rand: () => number) {

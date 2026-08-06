@@ -146,8 +146,8 @@ a {
   border-radius: 6px;
   overflow: hidden;
   box-shadow:
-    0 20px 44px rgba(30, 60, 45, 0.22),
-    0 0 0 1px rgba(255, 255, 255, 0.35) inset;
+    0 30px 64px rgba(20, 45, 32, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.45) inset;
   will-change: transform, opacity, filter;
   backface-visibility: hidden;
 }
@@ -158,6 +158,10 @@ a {
   height: 100%;
   object-fit: cover;
   pointer-events: none;
+  /* A little more punch against the pastel background — this is separate
+     from the card's own JS-driven blur filter (set on .scrollCard itself,
+     not the img), so the two never fight over the filter property. */
+  filter: saturate(1.15) contrast(1.06);
 }
 
 /* Content sits above the card layer (z-index below content, per spec) */

@@ -1,0 +1,116 @@
+/* Scoped to /prototype-2 only — this animation shares no classes with the
+   /prototype-1 card-cascade (see src/app/globals.css), so the two stay
+   visually and structurally independent. */
+
+.scene {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #f1ebe0;
+  color: #2b2620;
+}
+
+/* Grain sits above everything (including the WebGL canvas) as a uniform,
+   very low-alpha noise layer — baking the alpha into the SVG's own
+   feColorMatrix rather than element opacity keeps it from washing out. */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch' result='t'/%3E%3CfeColorMatrix in='t' type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* =========================================================
+   STAGE — the trophy Canvas fills this centered viewport
+   ========================================================= */
+.stage {
+  position: relative;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stage canvas {
+  display: block;
+}
+
+/* =========================================================
+   HOLD BUTTON
+   ========================================================= */
+.holdButton {
+  position: fixed;
+  right: 5%;
+  bottom: 8%;
+  z-index: 30;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  border: 1px solid rgba(43, 38, 32, 0.4);
+  background: rgba(241, 235, 224, 0.4);
+  backdrop-filter: blur(4px);
+  color: #2b2620;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: none;
+}
+
+.holdButton:hover {
+  border-color: rgba(43, 38, 32, 0.7);
+}
+
+.holdButton:active {
+  transform: scale(0.94);
+  background: rgba(212, 175, 82, 0.25);
+}
+
+@media (max-width: 700px) {
+  .holdButton {
+    width: 84px;
+    height: 84px;
+    right: 6%;
+    bottom: 6%;
+    font-size: 0.65rem;
+  }
+}
+
+/* =========================================================
+   CREDITS
+   ========================================================= */
+.credits {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 30;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(43, 38, 32, 0.75);
+}
+
+/* =========================================================
+   CONFETTI
+   ========================================================= */
+.confettiLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confettiPiece {
+  position: absolute;
+  width: 8px;
+  height: 14px;
+  border-radius: 1px;
+  will-change: transform, opacity;
+}

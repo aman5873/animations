@@ -89,7 +89,7 @@ export function cubicBezierTangent(
 }
 
 // mulberry32 — tiny, fast, deterministic PRNG.
-function mulberry32(seed: number) {
+export function mulberry32(seed: number) {
   let a = seed;
   return function () {
     a |= 0;

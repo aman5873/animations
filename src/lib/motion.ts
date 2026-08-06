@@ -35,7 +35,12 @@ export function bezierPoint(p0: Point, p1: Point, p2: Point, t: number): Point {
   };
 }
 
-export function bezierTangent(p0: Point, p1: Point, p2: Point, t: number): Point {
+export function bezierTangent(
+  p0: Point,
+  p1: Point,
+  p2: Point,
+  t: number,
+): Point {
   const mt = 1 - t;
   return {
     x: 2 * mt * (p1.x - p0.x) + 2 * t * (p2.x - p1.x),
@@ -48,7 +53,13 @@ export function bezierTangent(p0: Point, p1: Point, p2: Point, t: number): Point
 // path does exactly that (an S: bulges right through the lower half, then
 // bends back left through the upper half), which needs a cubic — two
 // control points on opposing sides of the start->end chord.
-export function cubicBezierPoint(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
+export function cubicBezierPoint(
+  p0: Point,
+  p1: Point,
+  p2: Point,
+  p3: Point,
+  t: number,
+): Point {
   const mt = 1 - t;
   const a = mt * mt * mt;
   const b = 3 * mt * mt * t;
@@ -60,7 +71,13 @@ export function cubicBezierPoint(p0: Point, p1: Point, p2: Point, p3: Point, t: 
   };
 }
 
-export function cubicBezierTangent(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
+export function cubicBezierTangent(
+  p0: Point,
+  p1: Point,
+  p2: Point,
+  p3: Point,
+  t: number,
+): Point {
   const mt = 1 - t;
   const a = 3 * mt * mt;
   const b = 6 * mt * t;
@@ -126,8 +143,30 @@ export interface CardConfig {
   bendSpinDeg: number;
 }
 
+const CARD_COUNT = 18;
+
+// DURATION is derived from CARD_COUNT rather than fixed, so overlap density
+// (how many cards are ever mid-flight at once) stays constant as CARD_COUNT
+// changes. Without this, turning CARD_COUNT up just packs the same DURATION
+// window tighter and tighter — gap = (1-DURATION)/(CARD_COUNT-1) shrinks but
+// DURATION doesn't, so more cards end up overlapping until they're back to
+// stacking on top of each other. The ratio is pinned to the density of the
+// originally-tuned 12-card/0.34-duration config (~5.67 cards visible at
+// once), so this reproduces that same density at any CARD_COUNT — including
+// a runtime override (e.g. a `?cards=` URL param), via deriveDuration below.
+const REFERENCE_CARD_COUNT = 12;
+const REFERENCE_DURATION = 0.34;
+const TARGET_OVERLAP =
+  (REFERENCE_DURATION * (REFERENCE_CARD_COUNT - 1)) / (1 - REFERENCE_DURATION);
+
+export function deriveDuration(cardCount: number) {
+  return TARGET_OVERLAP / (cardCount - 1 + TARGET_OVERLAP);
+}
+
+const DURATION = deriveDuration(CARD_COUNT);
+
 export const SCENE_CONFIG = {
-  CARD_COUNT: 12,
+  CARD_COUNT,
   ASPECT_MIN: 1.15,
   ASPECT_MAX: 1.6,
 
@@ -145,8 +184,8 @@ export const SCENE_CONFIG = {
   PATH_APEX: { xFrac: 1.75, yFrac: 0.1 },
   PATH_END: { xFrac: -0.85, yFrac: -1.3 },
 
-  PERP_JITTER_PX: 46,
-  LATERAL_WOBBLE_PX: 7,
+  PERP_JITTER_PX: 30,
+  LATERAL_WOBBLE_PX: 5,
   WOBBLE_FREQ_MIN: 0.5,
   WOBBLE_FREQ_MAX: 1.05,
 
@@ -172,7 +211,7 @@ export const SCENE_CONFIG = {
   // wrap/loop. Consecutive cards start GAP apart (derived below from
   // CARD_COUNT so the last card still finishes by progress=1), which is
   // what bounds how many cards can ever be mid-flight at once.
-  DURATION: 0.34,
+  DURATION,
 
   SCALE_SPAWN: 0.16,
 
@@ -227,23 +266,31 @@ function randRange(rand: () => number, min: number, max: number) {
   return min + rand() * (max - min);
 }
 
-export function buildCardConfigs(seed = 1337): CardConfig[] {
+export function buildCardConfigs(
+  seed = 1337,
+  cardCountOverride?: number,
+): CardConfig[] {
   const rand = mulberry32(seed);
   const cards: CardConfig[] = [];
-  const count = SCENE_CONFIG.CARD_COUNT;
+  const count = cardCountOverride ?? SCENE_CONFIG.CARD_COUNT;
+  const duration = cardCountOverride
+    ? deriveDuration(count)
+    : SCENE_CONFIG.DURATION;
 
-  // Evenly staggered starts spanning [0, 1 - DURATION] — card 0 starts at
-  // progress 0, the last card starts exactly DURATION early so it still
+  // Evenly staggered starts spanning [0, 1 - duration] — card 0 starts at
+  // progress 0, the last card starts exactly duration early so it still
   // completes its full pass by progress 1. Deterministic order (not
   // shuffled): timing consistency is the point here, and per-card size/tilt
   // is already randomized independently, so start order doesn't need to be.
-  const span = 1 - SCENE_CONFIG.DURATION;
+  const span = 1 - duration;
   const gap = count > 1 ? span / (count - 1) : 0;
 
   for (let i = 0; i < count; i++) {
     const tier = pickTier(rand);
     const width = Math.round(randRange(rand, tier.min, tier.max));
-    const height = Math.round(width * randRange(rand, SCENE_CONFIG.ASPECT_MIN, SCENE_CONFIG.ASPECT_MAX));
+    const height = Math.round(
+      width * randRange(rand, SCENE_CONFIG.ASPECT_MIN, SCENE_CONFIG.ASPECT_MAX),
+    );
 
     const growthStart = randRange(
       rand,
@@ -277,11 +324,27 @@ export function buildCardConfigs(seed = 1337): CardConfig[] {
       height,
       imgSeed: `zeroz-card-${i}`,
       startProgress: i * gap,
-      rotationZ: randRange(rand, SCENE_CONFIG.ROTATION_Z_MIN, SCENE_CONFIG.ROTATION_Z_MAX),
-      rotationY: randRange(rand, SCENE_CONFIG.ROTATION_Y_MIN, SCENE_CONFIG.ROTATION_Y_MAX),
-      rotationX: randRange(rand, SCENE_CONFIG.ROTATION_X_MIN, SCENE_CONFIG.ROTATION_X_MAX),
+      rotationZ: randRange(
+        rand,
+        SCENE_CONFIG.ROTATION_Z_MIN,
+        SCENE_CONFIG.ROTATION_Z_MAX,
+      ),
+      rotationY: randRange(
+        rand,
+        SCENE_CONFIG.ROTATION_Y_MIN,
+        SCENE_CONFIG.ROTATION_Y_MAX,
+      ),
+      rotationX: randRange(
+        rand,
+        SCENE_CONFIG.ROTATION_X_MIN,
+        SCENE_CONFIG.ROTATION_X_MAX,
+      ),
       perpOffset: randRange(rand, -1, 1) * SCENE_CONFIG.PERP_JITTER_PX,
-      wobbleFreq: randRange(rand, SCENE_CONFIG.WOBBLE_FREQ_MIN, SCENE_CONFIG.WOBBLE_FREQ_MAX),
+      wobbleFreq: randRange(
+        rand,
+        SCENE_CONFIG.WOBBLE_FREQ_MIN,
+        SCENE_CONFIG.WOBBLE_FREQ_MAX,
+      ),
       wobblePhase: rand() * Math.PI * 2,
       idlePhase: rand() * Math.PI * 2,
       idleFreq: 0.7 + rand() * 0.6,
@@ -292,8 +355,16 @@ export function buildCardConfigs(seed = 1337): CardConfig[] {
       fadeOutStart: Math.max(fadeOutStart, growthEnd + 0.03),
       // Always positive (clockwise) — every card twists the same direction
       // on its way out, not a coin-flip mix of left and right.
-      endSpinDeg: randRange(rand, SCENE_CONFIG.END_SPIN_MIN_DEG, SCENE_CONFIG.END_SPIN_MAX_DEG),
-      bendSpinDeg: randRange(rand, SCENE_CONFIG.BEND_SPIN_MIN_DEG, SCENE_CONFIG.BEND_SPIN_MAX_DEG),
+      endSpinDeg: randRange(
+        rand,
+        SCENE_CONFIG.END_SPIN_MIN_DEG,
+        SCENE_CONFIG.END_SPIN_MAX_DEG,
+      ),
+      bendSpinDeg: randRange(
+        rand,
+        SCENE_CONFIG.BEND_SPIN_MIN_DEG,
+        SCENE_CONFIG.BEND_SPIN_MAX_DEG,
+      ),
     });
   }
 

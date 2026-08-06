@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import CardLayer, { type CardLayerHandle } from "./CardLayer";
@@ -13,6 +14,20 @@ if (typeof window !== "undefined") {
 const NAV_LINKS = ["About", "Science & Technology", "Product", "Interview"];
 const DOT_COUNT = 6;
 
+// Runtime override for tuning without a redeploy — e.g. /prototype-1?cards=24.
+// Clamped so a stray value can't render zero cards or spawn hundreds of them.
+const CARD_COUNT_MIN = 4;
+const CARD_COUNT_MAX = 60;
+
+function useCardCountOverride() {
+  const searchParams = useSearchParams();
+  const raw = searchParams.get("cards");
+  if (raw === null) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.min(CARD_COUNT_MAX, Math.max(CARD_COUNT_MIN, parsed));
+}
+
 // The pinned stage releases at progress=1 regardless of where each card
 // happens to sit in its own cycle — without this, whatever frame is showing
 // gets frozen and dragged offscreen as a static image the instant the pin
@@ -21,6 +36,7 @@ const DOT_COUNT = 6;
 const EXIT_START = 0.86;
 
 export default function ScrollExperience() {
+  const cardCount = useCardCountOverride();
   const stageSectionRef = useRef<HTMLDivElement>(null);
   const stageStickyRef = useRef<HTMLDivElement>(null);
   const stageContentRef = useRef<HTMLDivElement>(null);
@@ -131,7 +147,7 @@ export default function ScrollExperience() {
       <section className="stageSection" ref={stageSectionRef}>
         <div className="stageSticky" ref={stageStickyRef}>
           <div className="stageContent" ref={stageContentRef}>
-            <CardLayer ref={cardLayerRef} />
+            <CardLayer ref={cardLayerRef} cardCount={cardCount} />
 
             <div className="heroCopy" ref={heroRef}>
               <p className="heroCopy__chapter">Chapter 1</p>

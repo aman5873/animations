@@ -1,18 +1,21 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import {
   SCENE_CONFIG,
   bezierPoint,
   bezierTangent,
   buildCardConfigs,
   clamp01,
+  deriveDuration,
   lerp,
   smoothstep,
-  type CardConfig,
 } from "@/lib/motion";
 
-const CARDS: CardConfig[] = buildCardConfigs();
+export interface CardLayerProps {
+  /** Overrides SCENE_CONFIG.CARD_COUNT — duration re-derives to match, so density stays consistent. */
+  cardCount?: number;
+}
 
 export interface CardLayerHandle {
   /** Push a new render frame: progress (0..1) + a monotonically increasing time in ms. */
@@ -23,10 +26,19 @@ function photoUrl(seed: string, w: number, h: number) {
   return `https://picsum.photos/seed/${seed}/${w}/${h}`;
 }
 
-const CardLayer = forwardRef<CardLayerHandle>(function CardLayer(_props, ref) {
+const CardLayer = forwardRef<CardLayerHandle, CardLayerProps>(function CardLayer({ cardCount }, ref) {
   const sceneRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
   const sizeRef = useRef({ w: 0, h: 0 });
+
+  const CARDS = useMemo(
+    () => (cardCount ? buildCardConfigs(1337, cardCount) : buildCardConfigs()),
+    [cardCount],
+  );
+  const duration = useMemo(
+    () => (cardCount ? deriveDuration(cardCount) : SCENE_CONFIG.DURATION),
+    [cardCount],
+  );
 
   useEffect(() => {
     const stage = sceneRef.current?.parentElement;
@@ -87,7 +99,7 @@ const CardLayer = forwardRef<CardLayerHandle>(function CardLayer(_props, ref) {
           // never wrapped. Below its start it sits parked at t=0 (spawn
           // point, invisible); past its own finish it parks at t=1 (faded
           // out). No loop means no card can ever be caught mid-reset.
-          const t = clamp01((progress - c.startProgress) / SCENE_CONFIG.DURATION);
+          const t = clamp01((progress - c.startProgress) / duration);
 
           const base = bezierPoint(p0, p1, p2, t);
           const tangent = bezierTangent(p0, p1, p2, t);
@@ -164,7 +176,7 @@ const CardLayer = forwardRef<CardLayerHandle>(function CardLayer(_props, ref) {
         }
       },
     }),
-    [],
+    [CARDS, duration],
   );
 
   return (

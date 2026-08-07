@@ -15,9 +15,11 @@ import styles from "@/app/prototype-2/trophy.module.css";
 const Trophy = dynamic(() => import("./Trophy"), { ssr: false });
 
 const RING_IMAGE_COUNT = 18;
+// 480×331 keeps the same ~317:218.5 aspect as the ring card geometry
+// (see RING_CARD_ASPECT in Trophy.tsx) so photos aren't stretched to fit.
 const RING_IMAGES = Array.from(
   { length: RING_IMAGE_COUNT },
-  (_, i) => `https://picsum.photos/seed/trophy-ring-${i}/480/300`,
+  (_, i) => `https://picsum.photos/seed/trophy-ring-${i}/480/331`,
 );
 
 export default function TrophyExperience() {

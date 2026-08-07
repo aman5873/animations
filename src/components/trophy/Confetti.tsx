@@ -10,7 +10,7 @@ export interface ConfettiHandle {
 }
 
 const COLORS = ["#d4af52", "#f3d98a", "#c79a3a", "#2b2620", "#8a6f2e"];
-const SPAWN_INTERVAL_MS = 200;
+const SPAWN_INTERVAL_MS = 100;
 
 const Confetti = forwardRef<ConfettiHandle>(function Confetti(_props, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -41,9 +41,28 @@ const Confetti = forwardRef<ConfettiHandle>(function Confetti(_props, ref) {
         const spin = (Math.random() - 0.5) * 360;
 
         const tl = gsap.timeline({ onComplete: () => el.remove() });
-        tl.fromTo(el, { opacity: 0 }, { opacity: 0.95, duration: 0.3, ease: "power1.out" }, 0)
-          .to(el, { y: fallDistance, x: drift, rotate: spin, duration: fallDuration, ease: "sine.in" }, 0)
-          .to(el, { opacity: 0, duration: 0.8, ease: "power1.in" }, fallDuration - 0.8);
+        tl.fromTo(
+          el,
+          { opacity: 0 },
+          { opacity: 0.95, duration: 0.3, ease: "power1.out" },
+          0,
+        )
+          .to(
+            el,
+            {
+              y: fallDistance,
+              x: drift,
+              rotate: spin,
+              duration: fallDuration,
+              ease: "sine.in",
+            },
+            0,
+          )
+          .to(
+            el,
+            { opacity: 0, duration: 0.8, ease: "power1.in" },
+            fallDuration - 0.8,
+          );
       };
 
       spawn();

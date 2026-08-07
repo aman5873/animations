@@ -7,121 +7,84 @@ import * as THREE from "three";
 import type { Group } from "three";
 import { mulberry32 } from "@/lib/motion";
 
-// No trophy.glb / studio.hdr supplied yet. The ball's pentagon/hexagon seams
-// are faked with a CPU-generated bump map (a Voronoi cell field evaluated
-// directly in 3D over the sphere's surface, not in UV space — that's what
-// keeps the panels from pinching at the poles the way a naive image-space
-// pattern would) instead of hand-authoring real geometry. Swap in a real
-// useGLTF("/models/trophy.glb") here once one exists; Environment's
-// "studio" preset is already a real HDRI (fetched from drei's asset CDN),
-// so the gold reflections are genuine even though the panel texture is not.
-function smoothstep01(edge0: number, edge1: number, x: number) {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
+// VS_logo.svg's own intrinsic size (from its <svg width/height>) — used so
+// the plane's aspect ratio matches the source art instead of being guessed.
+const LOGO_ASPECT = 379 / 244;
+const LOGO_HEIGHT = 0.95;
+// Matches the base/blade gold elsewhere in this file, so the recolored logo
+// reads as part of the same trophy rather than a mismatched accent color.
+const LOGO_COLOR = "#271f0b";
+
+// VS_logo.svg's source art is a raster image (not vector paths with a
+// fill), so there's no attribute to just recolor. Redrawing it onto a
+// canvas and compositing with "source-in" replaces every opaque pixel with
+// LOGO_COLOR while keeping the original alpha silhouette — a solid-color
+// cutout of the same shape, regardless of what colors the source art had.
+function useSolidColorTexture(url: string, color: string) {
+  const sourceTextures = useLoader(THREE.TextureLoader, [url]);
+  const source = sourceTextures[0];
+
+  return useMemo(() => {
+    const img = source.image as HTMLImageElement;
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    ctx.globalCompositeOperation = "source-in";
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, [source, color]);
 }
 
-function fibonacciSpherePoints(count: number, seed: number) {
-  const rand = mulberry32(seed);
-  const points: [number, number, number][] = [];
-  const offset = 2 / count;
-  const increment = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < count; i++) {
-    const y = i * offset - 1 + offset / 2 + (rand() - 0.5) * 0.03;
-    const r = Math.sqrt(Math.max(0, 1 - y * y));
-    const phi = i * increment;
-    points.push([Math.cos(phi) * r, y, Math.sin(phi) * r]);
-  }
-  return points;
+function LogoPlane() {
+  const texture = useSolidColorTexture("/VS_logo.svg", LOGO_COLOR);
+
+  return (
+    <mesh>
+      <planeGeometry args={[LOGO_HEIGHT * LOGO_ASPECT, LOGO_HEIGHT]} />
+      {/* DoubleSide so the logo doesn't vanish edge-on as it spins past
+          90° — the back face just shows the same artwork mirrored. */}
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        toneMapped={false}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
 }
 
-function createPanelBumpTexture(seed = 7) {
-  const width = 768;
-  const height = 384;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d")!;
-  const image = ctx.createImageData(width, height);
-
-  const sites = fibonacciSpherePoints(30, seed);
-  const shadeRand = mulberry32(seed + 1);
-  const cellShade = sites.map(() => 195 + shadeRand() * 40);
-
-  for (let y = 0; y < height; y++) {
-    const v = y / (height - 1);
-    const phi = v * Math.PI;
-    const cosPhi = Math.cos(phi);
-    const sinPhi = Math.sin(phi);
-    for (let x = 0; x < width; x++) {
-      const u = x / (width - 1);
-      const theta = u * Math.PI * 2;
-      const px = -Math.cos(theta) * sinPhi;
-      const py = cosPhi;
-      const pz = Math.sin(theta) * sinPhi;
-
-      let nearest = Infinity;
-      let secondNearest = Infinity;
-      let nearestIdx = 0;
-      for (let s = 0; s < sites.length; s++) {
-        const [sx, sy, sz] = sites[s];
-        const dx = px - sx;
-        const dy = py - sy;
-        const dz = pz - sz;
-        const d = dx * dx + dy * dy + dz * dz;
-        if (d < nearest) {
-          secondNearest = nearest;
-          nearest = d;
-          nearestIdx = s;
-        } else if (d < secondNearest) {
-          secondNearest = d;
-        }
-      }
-
-      const gap = Math.sqrt(secondNearest) - Math.sqrt(nearest);
-      const seam = 1 - smoothstep01(0, 0.014, gap);
-      const value = Math.round(cellShade[nearestIdx] * (1 - seam * 0.95));
-
-      const idx = (y * width + x) * 4;
-      image.data[idx] = value;
-      image.data[idx + 1] = value;
-      image.data[idx + 2] = value;
-      image.data[idx + 3] = 255;
-    }
-  }
-
-  ctx.putImageData(image, 0, 0);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-// Ball + base rotate together as one rigid trophy — a single group/ref
-// carries both, driven from ballRadRef, rather than the ball spinning on
-// its own while the base sits fixed underneath it.
-function TrophyUnit({ ballRadRef }: { ballRadRef: { current: number } }) {
+// Logo + base rotate together as one rigid unit (when not static) — a
+// single group/ref carries both, driven from ballRadRef, rather than the
+// logo spinning on its own while the base sits fixed underneath it.
+function TrophyUnit({
+  ballRadRef,
+  staticLogo,
+}: {
+  ballRadRef: { current: number };
+  staticLogo: boolean;
+}) {
   const groupRef = useRef<Group>(null);
-  const bumpMap = useMemo(() => createPanelBumpTexture(), []);
 
   useFrame(() => {
-    if (groupRef.current) groupRef.current.rotation.y = ballRadRef.current;
+    // staticLogo=true simply never touches rotation.y, leaving it at its
+    // initial 0 — no separate "static" code path to keep in sync.
+    if (groupRef.current && !staticLogo) {
+      groupRef.current.rotation.y = ballRadRef.current;
+    }
   });
 
   return (
     <group ref={groupRef}>
-      <mesh castShadow>
-        <sphereGeometry args={[0.62, 96, 96]} />
-        <meshStandardMaterial
-          color="#d9ab3e"
-          metalness={0.95}
-          roughness={0.32}
-          envMapIntensity={1.2}
-          bumpMap={bumpMap}
-          bumpScale={0.09}
-        />
-      </mesh>
-      <SpikyBase />
+      <Suspense fallback={null}>
+        <LogoPlane />
+      </Suspense>
+      {/* <SpikyBase /> */}
     </group>
   );
 }
@@ -179,30 +142,53 @@ function SpikyBase() {
             rotation={[0, 0, -b.flareTilt]}
             scale={[1, b.heightScale, 1]}
           >
-            <meshStandardMaterial color="#caa03f" metalness={1} roughness={0.25} envMapIntensity={1.3} />
+            <meshStandardMaterial
+              color="#caa03f"
+              metalness={1}
+              roughness={0.25}
+              envMapIntensity={1.3}
+            />
           </mesh>
         </group>
       ))}
       <mesh>
         <cylinderGeometry args={[0.42, 0.5, 0.14, 48]} />
-        <meshStandardMaterial color="#b3872f" metalness={1} roughness={0.3} envMapIntensity={1.2} />
+        <meshStandardMaterial
+          color="#b3872f"
+          metalness={1}
+          roughness={0.3}
+          envMapIntensity={1.2}
+        />
       </mesh>
     </group>
   );
 }
 
-const RING_RADIUS = 1.2;
-const RING_BAND_HEIGHT = 0.58;
+// Overall ring/card size — radius is derived from this (see RingBand), so
+// bumping this one number scales card height AND the ring's radius
+// together while keeping RING_CARD_ASPECT's proportions locked. If you
+// push this much further, pull the camera back too (see Trophy below) —
+// it's currently framed for this value, not auto-fitted.
+const RING_BAND_HEIGHT = 0.85;
+// Matches the supplied card spec (317×218.5px).
+const RING_CARD_ASPECT = 317 / 218.5;
 // Tilts only the ring's own group, not the ball/base — the ball stays
 // upright (a real trophy would), while the ring reads as a halo seen from
 // slightly above, the same way Saturn's rings tilt independent of the
 // planet. Positive X here is the front (the +Z side, nearest the camera)
 // dipping down and the back lifting up; combining it with a roll (Z) is
 // what makes the tilt read as diagonal rather than symmetric front-to-back.
-const RING_TILT_X = 0.16;
-const RING_TILT_Z = 0.1;
 
-function RingBand({ images, ringRadRef }: { images: string[]; ringRadRef: { current: number } }) {
+const RING_TILT_X = 0.18; // pitch — front dips down / back lifts up
+const RING_TILT_Z = 0.1; // roll — left dips down / right lifts up (diagonal)
+
+function RingBand({
+  images,
+  ringRadRef,
+}: {
+  images: string[];
+  ringRadRef: { current: number };
+}) {
   const spinRef = useRef<Group>(null);
   const textures = useLoader(THREE.TextureLoader, images);
 
@@ -217,9 +203,22 @@ function RingBand({ images, ringRadRef }: { images: string[]; ringRadRef: { curr
   });
 
   const sliceAngle = (Math.PI * 2) / images.length;
+  // arcWidth = radius * sliceAngle, so solving for radius from the target
+  // aspect ratio is what keeps each card's proportions correct at any count.
+  const radius = (RING_BAND_HEIGHT * RING_CARD_ASPECT) / (sliceAngle * 0.98);
   const geometry = useMemo(
-    () => new THREE.CylinderGeometry(RING_RADIUS, RING_RADIUS, RING_BAND_HEIGHT, 12, 1, true, 0, sliceAngle * 0.98),
-    [sliceAngle],
+    () =>
+      new THREE.CylinderGeometry(
+        radius,
+        radius,
+        RING_BAND_HEIGHT,
+        12,
+        1,
+        true,
+        0,
+        sliceAngle * 0.98,
+      ),
+    [sliceAngle, radius],
   );
 
   return (
@@ -232,7 +231,11 @@ function RingBand({ images, ringRadRef }: { images: string[]; ringRadRef: { curr
                 surface. They're flat printed cards, not reflective objects,
                 so meshBasicMaterial + toneMapped=false shows the texture's
                 actual color straight through instead. */}
-            <meshBasicMaterial map={texture} side={THREE.DoubleSide} toneMapped={false} />
+            <meshBasicMaterial
+              map={texture}
+              side={THREE.DoubleSide}
+              toneMapped={false}
+            />
           </mesh>
         ))}
       </group>
@@ -244,16 +247,29 @@ interface TrophyProps {
   images: string[];
   ringRadRef: { current: number };
   ballRadRef: { current: number };
+  /** Logo doesn't rotate when true (default) — set false to spin it with the ball's counter-rotation. */
+  staticLogo?: boolean;
 }
 
-export default function Trophy({ images, ringRadRef, ballRadRef }: TrophyProps) {
+export default function Trophy({
+  images,
+  ringRadRef,
+  ballRadRef,
+  staticLogo = true,
+}: TrophyProps) {
   return (
-    <Canvas dpr={[1, 2]} camera={{ position: [0, 0, 5.6], fov: 26 }}>
+    // Camera is deliberately far back with a narrow (telephoto-like) fov,
+    // rather than close with a wide one — moved further and framed tighter,
+    // same on-screen ring size, but flatter perspective. The ring's depth
+    // (front-to-back across its radius) is a much smaller fraction of the
+    // camera distance this way, so the back cards don't shrink nearly as
+    // much relative to the front ones as they did up close.
+    <Canvas dpr={[1, 2]} camera={{ position: [0, 0, 11.5], fov: 30 }}>
       <Environment preset="studio" background={false} />
       <ambientLight intensity={0.4} />
       <directionalLight position={[3, 6, 5]} intensity={1.1} />
       <directionalLight position={[-4, -1, -3]} intensity={0.3} />
-      <TrophyUnit ballRadRef={ballRadRef} />
+      <TrophyUnit ballRadRef={ballRadRef} staticLogo={staticLogo} />
       <Suspense fallback={null}>
         <RingBand images={images} ringRadRef={ringRadRef} />
       </Suspense>
